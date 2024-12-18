@@ -1,7 +1,9 @@
-name: Manual Build Docker Image
+name: Auto Build Docker Image
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "30 21 * * *"
 
 jobs:
   buildx:
@@ -28,12 +30,26 @@ jobs:
         id: set-version
         run: |
           echo "::set-output name=version::$(cat ReleaseTag | head -n1)"
-          echo "ReleaseTag=$(cat ReleaseTag | head -n1)" 
-          echo "::set-output name=status::success"
+          echo "ReleaseTag=$(cat ReleaseTag | head -n1)"
+      # 缓存release tag，用作与下一次执行任务时获取到到release tag做对比
+      - name: Cache tag
+        id: cache-tag
+        uses: actions/cache@v2
+        with:
+          path: ./tag/
+          key: ${{ runner.os }}-tag-v${{ steps.set-version.outputs.version }}
 
+      # 获取将latest release tag，未命中缓存则更新ReleaseTag
+      - name: Get latest release tag
+        id: get-release-tag
+        if: steps.cache-tag.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ./tag
+          echo ${{ steps.set-version.outputs.version }} > ./tag/tag-${{ steps.set-version.outputs.version }}
+          echo "::set-output name=status::success"
       # Build and push
       - name: Build and push
-        if: steps.set-version.outputs.status == 'success'
+        if: steps.get-release-tag.outputs.status == 'success'
         uses: docker/build-push-action@v2
         with:
           file: ./Dockerfile
